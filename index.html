@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>파일 확장자 차단</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Arial, sans-serif; margin: 24px; line-height: 1.4; }
+    .container { max-width: 860px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; }
+    .muted { color: #666; font-size: 14px; margin-bottom: 18px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin: 12px 0; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .fixed-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 10px; }
+    label { display: flex; gap: 8px; align-items: center; }
+    input[type="text"] { padding: 10px 12px; border: 1px solid #ccc; border-radius: 10px; min-width: 240px; }
+    button { padding: 10px 12px; border: 1px solid #ccc; border-radius: 10px; background: #fff; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #ddd; border-radius: 999px; padding: 8px 12px; margin: 6px 6px 0 0; }
+    .x { border: none; background: transparent; font-size: 16px; cursor: pointer; }
+    .error { color: #b00020; margin-top: 8px; }
+    .ok { color: #0a7a2f; margin-top: 8px; }
+    code { background: #f5f5f5; padding: 2px 6px; border-radius: 6px; }
+    .footer { margin-top: 18px; font-size: 13px; color: #666; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>파일 확장자 차단</h1>
+  <div class="muted">
+    고정확장자는 체크 상태가 DB에 저장되며(새로고침 유지), 커스텀 확장자는 최대 200개까지 추가 가능합니다.
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 10px;">1) 고정확장자</h2>
+    <div class="muted" style="margin:0 0 10px;">
+      기본 상태는 <b>unchecked</b> 입니다. 체크/해제 시 DB에 저장됩니다.
+    </div>
+    <div id="fixedGrid" class="fixed-grid"></div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 10px;">2) 커스텀 확장자</h2>
+    <div class="row">
+      <input id="customInput" type="text" placeholder="예: zip (최대 20자, 소문자/숫자만)" maxlength="20" />
+      <button id="addBtn">추가</button>
+      <span id="countInfo" class="muted"></span>
+    </div>
+    <div id="msg"></div>
+    <div id="customList" style="margin-top:10px;"></div>
+
+    <div class="footer">
+      고려사항 예시: 중복 등록 방지, 고정확장자와의 충돌 방지(고정은 아래 리스트에 노출되지 않음), 입력값 정규화(대문자/점(.) 제거), 최대 개수 제한 등.
+    </div>
+  </div>
+</div>
+
+<script>
+  const fixedGrid = document.getElementById("fixedGrid");
+  const customList = document.getElementById("customList");
+  const customInput = document.getElementById("customInput");
+  const addBtn = document.getElementById("addBtn");
+  const msg = document.getElementById("msg");
+  const countInfo = document.getElementById("countInfo");
+
+  let state = { fixed: [], custom: [], limits: { custom_max: 200, ext_max_len: 20 } };
+
+  function normalizeExt(v) {
+    v = (v || "").trim().toLowerCase();
+    if (v.startsWith(".")) v = v.slice(1);
+    return v;
+  }
+
+  function setMessage(text, type) {
+    msg.innerHTML = text ? `<div class="${type}">${text}</div>` : "";
+  }
+
+  async function api(path, options={}) {
+    const res = await fetch(path, {
+      headers: { "Content-Type": "application/json" },
+      ...options
+    });
+    let body = null;
+    try { body = await res.json(); } catch (e) {}
+    if (!res.ok) {
+      const detail = body?.detail || `요청 실패 (${res.status})`;
+      throw new Error(detail);
+    }
+    return body;
+  }
+
+  function renderFixed() {
+    fixedGrid.innerHTML = "";
+    state.fixed.forEach(item => {
+      const wrap = document.createElement("div");
+      const id = `fixed_${item.ext}`;
+      wrap.innerHTML = `
+        <label>
+          <input type="checkbox" id="${id}" ${item.blocked ? "checked" : ""} />
+          <span><code>${item.ext}</code> 차단</span>
+        </label>
+      `;
+      fixedGrid.appendChild(wrap);
+
+      const cb = wrap.querySelector("input");
+      cb.addEventListener("change", async () => {
+        setMessage("", "ok");
+        try {
+          await api(`/api/fixed/${encodeURIComponent(item.ext)}`, {
+            method: "PATCH",
+            body: JSON.stringify({ blocked: cb.checked })
+          });
+          item.blocked = cb.checked;
+          setMessage(`고정확장자 <code>${item.ext}</code> 상태가 저장되었습니다.`, "ok");
+        } catch (e) {
+          cb.checked = !cb.checked; // 롤백
+          setMessage(e.message, "error");
+        }
+      });
+    });
+  }
+
+  function renderCustom() {
+    customList.innerHTML = "";
+    const max = state.limits.custom_max;
+    countInfo.textContent = `(${state.custom.length}/${max})`;
+
+    if (state.custom.length === 0) {
+      customList.innerHTML = `<div class="muted">등록된 커스텀 확장자가 없습니다.</div>`;
+      return;
+    }
+
+    state.custom.forEach(ext => {
+      const pill = document.createElement("span");
+      pill.className = "pill";
+      pill.innerHTML = `<code>${ext}</code> <button class="x" title="삭제" aria-label="삭제">×</button>`;
+      pill.querySelector("button").addEventListener("click", async () => {
+        setMessage("", "ok");
+        try {
+          await api(`/api/custom/${encodeURIComponent(ext)}`, { method: "DELETE" });
+          state.custom = state.custom.filter(x => x !== ext);
+          renderCustom();
+          setMessage(`커스텀 확장자 <code>${ext}</code>가 삭제되었습니다.`, "ok");
+        } catch (e) {
+          setMessage(e.message, "error");
+        }
+      });
+      customList.appendChild(pill);
+    });
+  }
+
+  async function load() {
+    setMessage("", "ok");
+    const data = await api("/api/config");
+    state.fixed = data.fixed;
+    state.custom = data.custom;
+    state.limits = data.limits;
+    renderFixed();
+    renderCustom();
+  }
+
+  addBtn.addEventListener("click", async () => {
+    setMessage("", "ok");
+    const ext = normalizeExt(customInput.value);
+
+    try {
+      await api("/api/custom", {
+        method: "POST",
+        body: JSON.stringify({ ext })
+      });
+      // 성공하면 로컬에 반영
+      state.custom.push(ext);
+      state.custom.sort();
+      customInput.value = "";
+      renderCustom();
+      setMessage(`커스텀 확장자 <code>${ext}</code>가 추가되었습니다.`, "ok");
+    } catch (e) {
+      setMessage(e.message, "error");
+    }
+  });
+
+  customInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addBtn.click();
+  });
+
+  load().catch(e => setMessage(e.message, "error"));
+</script>
+</body>
+</html>
