@@ -7,7 +7,8 @@ import os
 
 app = FastAPI()
 
-DB_PATH = os.getenv("DB_PATH", "extensions.db")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.getenv("DB_PATH", os.path.join(BASE_DIR, "extensions.db"))
 
 # 과제에서 말한 "고정확장자" (기본 unchecked)
 FIXED_EXTENSIONS = [
@@ -80,8 +81,7 @@ init_db()
 
 @app.get("/")
 def index():
-    # project/index.html 반환
-    return FileResponse("index.html")
+    return FileResponse(os.path.join(BASE_DIR, "index.html"))
 
 
 @app.get("/api/config")
