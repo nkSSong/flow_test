@@ -14,8 +14,8 @@ Render Free 플랜 관련 안내
 
 1) 가상환경 생성 및 활성화
 
-python -m venv .venv
-source .venv/bin/activate
+`python -m venv .venv`
+`source .venv/bin/activate`
 
 2) 패키지 설치
 
