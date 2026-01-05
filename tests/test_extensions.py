@@ -123,3 +123,64 @@ def test_delete_custom(client):
 def test_delete_custom_not_found(client):
     res = client.delete("/api/custom/notexist")
     assert res.status_code == 404
+
+
+def test_toggle_fixed_unknown_returns_404(client):
+    res = client.patch("/api/fixed/unknown", json={"blocked": True})
+    assert res.status_code == 404
+
+
+def test_add_custom_empty_rejected(client):
+    res = client.post("/api/custom", json={"ext": ""})
+    assert res.status_code == 400
+
+
+def test_add_custom_spaces_rejected(client):
+    res = client.post("/api/custom", json={"ext": "   "})
+    assert res.status_code == 400
+
+
+def test_add_custom_dot_only_rejected(client):
+    res = client.post("/api/custom", json={"ext": "."})
+    assert res.status_code == 400
+
+
+def test_add_custom_len_20_ok(client):
+    ok_20 = "a" * 20
+    res = client.post("/api/custom", json={"ext": ok_20})
+    assert res.status_code == 200
+    assert res.json()["ext"] == ok_20
+
+
+def test_delete_custom_normalizes_dot_upper(client):
+    client.post("/api/custom", json={"ext": "zip"})
+    res = client.delete("/api/custom/.ZIP")
+    assert res.status_code == 200
+    assert res.json()["deleted"] == "zip"
+
+
+def test_custom_list_sorted(client):
+    client.post("/api/custom", json={"ext": "bbb"})
+    client.post("/api/custom", json={"ext": "aaa"})
+    res = client.get("/api/config")
+    assert res.status_code == 200
+    assert res.json()["custom"] == ["aaa", "bbb"]
+
+
+def test_persistence_after_reload(tmp_path, monkeypatch):
+    db_file = tmp_path / "persist.db"
+    monkeypatch.setenv("DB_PATH", str(db_file))
+
+    main1 = load_main_module()
+    c1 = TestClient(main1.app)
+    c1.patch("/api/fixed/exe", json={"blocked": True})
+    c1.post("/api/custom", json={"ext": "zip"})
+
+    # "재기동"처럼 다시 로드
+    main2 = load_main_module()
+    c2 = TestClient(main2.app)
+    data = c2.get("/api/config").json()
+
+    fixed = {x["ext"]: x["blocked"] for x in data["fixed"]}
+    assert fixed["exe"] is True
+    assert "zip" in data["custom"]

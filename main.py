@@ -3,10 +3,11 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import sqlite3
 import re
+import os
 
 app = FastAPI()
 
-DB_PATH = "extensions.db"
+DB_PATH = os.getenv("DB_PATH", "extensions.db")
 
 # 과제에서 말한 "고정확장자" (기본 unchecked)
 FIXED_EXTENSIONS = [
