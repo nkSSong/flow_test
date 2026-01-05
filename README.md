@@ -22,7 +22,7 @@ source .venv/bin/activate
 `pip install fastapi uvicorn pytest httpx`
 ## 실행 방법
 
-`uvicorn main:app –reload`
+`uvicorn main:app –-reload`
 
 브라우저 접속 주소
 http://127.0.0.1:8000/
